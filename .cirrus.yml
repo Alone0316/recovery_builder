@@ -1,0 +1,93 @@
+env:
+    # OrangeFox Sync Repository
+    FOX_SYNC: https://gitlab.com/OrangeFox/sync.git
+
+    # Device
+    FOX_BRANCH: 11.0
+    DT_LINK: https://github.com/Alone0316/recovery_samsung_a52sxq.git
+    DEVICE: a52sxq
+    OEM: samsung
+    TARGET: recoveryimage
+
+    DT_PATH: device/$OEM/$DEVICE
+    OUTPUT: OrangeFox*.zip
+
+    # Not Recommended to Change
+    SYNC_BRANCH: ${FOX_BRANCH}
+    SYNC_PATH: $HOME/work # Full (absolute) path. Use "$HOME" instead of "~".
+    USE_CCACHE: 1
+    CCACHE_SIZE: 50G
+    CCACHE_DIR: $HOME/work/.ccache
+    J_VAL: 16
+
+    # Cirrus Specific Vars (Do *NOT* Change)
+    CIRRUS_SHELL: bash
+
+    # Telegram
+    CHAT_ID: [-1001283860476]
+    API_BOT: [2049436092:AAGobgTgnXbNbeYgG7RdiPINcCnDhxbP8XU]
+
+    # setup telegram env
+    export BOT_MSG_URL="https://api.telegram.org/bot$API_BOT/sendMessage"
+    export BOT_BUILD_URL="https://api.telegram.org/bot$API_BOT/sendDocument"
+
+    tg_post_msg() {
+        curl -s -X POST "$BOT_MSG_URL" -d chat_id="$2" \
+        -d "parse_mode=html" \
+        -d text="$1"
+}
+
+    tg_post_build() {
+        #Post MD5Checksum alongwith for easeness
+        MD5CHECK=$(md5sum "$1" | cut -d' ' -f1)
+
+        #Show the Checksum alongwith caption
+        curl --progress-bar -F document=@"$1" "$BOT_BUILD_URL" \
+        -F chat_id="$2" \
+        -F "disable_web_page_preview=true" \
+        -F "parse_mode=html" \
+        -F caption="$3 build finished in $(($Diff / 60)) minutes and $(($Diff % 60)) seconds | <b>MD5 Checksum : </b><code>$MD5CHECK</code>"
+}
+
+    tg_error() {
+        curl --progress-bar -F document=@"$1" "$BOT_BUILD_URL" \
+        -F chat_id="$2" \
+        -F "disable_web_page_preview=true" \
+        -F "parse_mode=html" \
+        -F caption="$3Failed to build , check <code>error.log</code>"
+}
+
+    # Cirrus Specific Vars (Do *NOT* Change)
+    CIRRUS_SHELL: bash
+
+task:
+  name: "Recovery Build"
+  timeout_in: 120m
+  container:
+      image: ghcr.io/sushrut1101/docker:arch
+      cpu: 8
+      memory: 20G
+
+  Sync_script:
+      - curl -sL https://raw.githubusercontent.com/Alone0316/recovery_builder/main/scripts/sync.sh | bash
+      - (bash -c "$command" | tee sync.txt) || true
+      - a=$(grep 'Cannot remove project' sync.txt || true)
+      - b=$(grep "^fatal: remove-project element specifies non-existent project" sync.txt || true)
+      - if [[ $a == *'Cannot remove project'* ]]
+      - then
+      - a=$(echo $a | cut -d ':' -f2)
+      - rm -rf $a
+      - repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc --all)
+      - elif [[ $b == *'remove-project element specifies non-existent'* ]]
+      - then exit 1
+      - else
+      - (repo forall -c 'git checkout .' && bash -c "$only_sync") || (find -name shallow.lock -delete && find -name index.lock -delete && bash -c "$only_sync")
+      - fi
+      - rm -rf sync.txt
+
+  Build_script:
+      - curl -sL https://raw.githubusercontent.com/Alone0316/recovery_builder/main/build.sh | bash
+
+  Upload_script:
+      - export TIMEOUT=50000 # Link timeout (in minutes)
+      - curl https://raw.githubusercontent.com/Alone0316/recovery_builder/main/upload.sh | bash
