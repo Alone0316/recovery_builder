@@ -39,7 +39,7 @@ task:
       memory: 20G
 
   Sync_script:
-      - curl -sL https://raw.githubusercontent.com/Alone0316/recovery_builder/main/scripts/sync.sh | bash
+      - curl -sL https://raw.githubusercontent.com/Alone0316/recovery_builder/main/sync.sh | bash
       - (bash -c "$command" | tee sync.txt) || true
       - a=$(grep 'Cannot remove project' sync.txt || true)
       - b=$(grep "^fatal: remove-project element specifies non-existent project" sync.txt || true)
